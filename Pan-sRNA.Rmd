@@ -1,0 +1,295 @@
+Build Pan-sRNA for PA
+First We select 484 PA strains' DNA fasta and GFF from RefSeq to form our PA Pan-genome DNA library,
+Then we Select all annotated sRNA
+
+# raw sRNA
+```{R}
+rm(list=ls())
+
+# load all gff file
+ref <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/484/484.gff", skip = 7, header = F, sep = "\t")
+unique(ref$V3)
+sRNA_nome1 <- subset(ref, V3 == "ncRNA") # 803 sequences was annotated as ncRNA directly
+length(unique(sRNA_nome1$V1))
+sRNA_nome2 <- ref[grepl("sRNA", ref$V9), ] %>%
+  subset(V3 == "exon") # 802 sequences was annotated as sRNA
+sRNA_nome3 <- ref[grepl("ncRNA", ref$V9), ] %>%
+  subset(V3 != "ncRNA") #803 sequences was ncRNA
+
+#annotated sRNA from Pseudomonas.com
+sRNA_nome4 <- read.csv("/Users/lubeifang/Desktop/sRNA/sRNAprediction/ref/44ncRNA.gtf", sep = "\t", header = F) %>%
+  subset(V3=="ncRNA")
+sRNA_nome4$V1 <- gsub("chromosome","NC_002516.2",sRNA_nome4$V1)
+
+# Get the final PA sRNA Library
+sRNA_nome <- rbind(sRNA_nome1, sRNA_nome2, sRNA_nome3, sRNA_nome4)
+sRNA_nome = sRNA_nome[!duplicated(sRNA_nome[,c("V1","V4","V5")]),] # delete the same one
+length(unique(sRNA_nome$V1))
+unique(sRNA_nome$V3)
+
+# Change the name for sRNA
+name <- list()
+for (i in 1:nrow(sRNA_nome)) {
+  name_temp <- strsplit(strsplit(sRNA_nome[i,9], ";")[[1]][2], "-")[[1]][2]
+  name[[length(name)+1]] <- name_temp
+}
+
+sRNA_nome_all <- data.frame(chr = sRNA_nome$V1,
+                            start = sRNA_nome$V4,
+                            end = sRNA_nome$V5,
+                            name = unlist(name))
+write.csv(sRNA_nome_all, "/Users/lubeifang/Desktop/sRNA/MSA/Pan_sRNA_known.csv",row.names = F)
+```
+
+Add our new sRNA into Pan-sRAN
+Using Bedtools to get all sRNA sequence 
+and then remove high identity sequences
+search though 484.db
+
+# blast
+```{bash}
+# get fasta sequences
+#bedtools getfasta -fi /Users/lubeifang/Desktop/sRNA/MSA/484/484.fasta -bed /Users/lubeifang/Desktop/sRNA/MSA/Pan_sRNA.bed > /Users/lubeifang/Desktop/sRNA/MSA/Pan_sRNA.fasta
+
+# cluster all DNA sequences
+# cd /Users/lubeifang/Desktop/sRNA/MSA/MMseq/
+# mmseqs createdb /Users/lubeifang/Desktop/sRNA/MSA/Pan_sRNA.fasta /Users/lubeifang/Desktop/sRNA/MSA/MMseq/DB
+# cov-mode 0 represent query coverage
+# mmseqs easy-cluster /Users/lubeifang/Desktop/sRNA/MSA/Pan_sRNA.fasta clusterRes tmp --min-seq-id 0.9 -c 0.9 --cov-mode 2
+```
+Change the name
+blast in server, using 67 representative sequence blast through 803 fastas.
+Load blast results
+# analyze sR-nome
+```{R}
+Repre62 <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/484/62Represent.csv", header = F)
+name2site <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/67sRNAname2sites.csv", header = F)
+final62withname <- merge(Repre62, name2site, by.x="V2", by.y = "V1", all.x = T)
+final62withname <- final62withname[order(final62withname$V1),]
+write.csv(final62withname, "/Users/lubeifang/Desktop/sRNA/MSA/MMseq/Repre62fasta.csv")
+
+
+# four are hammerhead
+# load blast results
+blast <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/62in484_results.txt", sep = "\t", header = F)
+colnames(blast) = c("Query_id","Subject_id","Identity","Align_length","Miss_match",
+                    "Gap","Query_start","Query_end","Subject_start","Subject_end","E_value","Score")
+# A loose cutoff
+blast <- subset(blast, E_value <= 1e-10 & Identity > 90) 
+# remove plasmid
+blast <- blast[blast$Subject_id != "NZ_CP070468.1",]
+unique(blast$Subject_id)
+
+# Only keep the best score one
+blast = blast[order(blast$Score, decreasing = T),]
+blast = blast[!duplicated(blast[,c("Query_id","Subject_id")]),] # keep only unique sequences
+length(unique(blast$Query_id))
+table(blast$Query_id)
+
+setdiff(a,b)
+```
+
+
+Check whether the sequences are in CDS
+# double check sRNA region
+```{R}
+library(tidygenomics)
+library(dplyr)
+
+a <- blast[c(1,2,9,10)]
+# rearrange the start and end position, orderly
+df1 <- data.frame(id = a[,1], chromosome = a[,2], 
+                  start = ifelse(a$Subject_start < a$Subject_end, a$Subject_start, a$Subject_end),
+                  end = ifelse(a$Subject_start > a$Subject_end, a$Subject_start, a$Subject_end))
+length(unique(df1$chromosome))
+colnames(df1) <- c("id","chromosome", "start", "end")
+
+# load the gff file
+# ref <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/484/484.gff", skip=10, header = F, sep = "\t")
+length(unique(ref$V1))
+ref <- subset(ref, V3 ==  "CDS")
+
+# rename df2 col
+df2 <- ref[,c(9,1,4,5)]
+colnames(df2) <- c("id","chromosome", "start", "end")
+
+# double check whether they are in intergenic region
+int=genome_intersect(df1, df2, by=c("chromosome", "start", "end"), mode="both")
+c<-data.frame(table(int$id.x))
+
+# Label the CDS or intergenic
+colnames(int) <- c("Query_id","Subject_id","gene_id","start","end")
+merged_df <- merge(blast, int, by=c("Query_id","Subject_id"), all.x = T)
+merged_df$label <- ifelse(is.na(merged_df$gene_id),"Intergenic region","CDS region")
+pan <- data.frame(name = unique(merged_df$Query_id))
+pan_inter <- data.frame(name=unique(merged_df[merged_df$label == "Intergenic region",]$Query_id), inter = 1)
+pan_cds <- data.frame(name=unique(merged_df[merged_df$label != "Intergenic region",]$Query_id), cds = 1)
+
+pan <- merge(pan,pan_inter,by="name",all.x=T)
+pan <- merge(pan,pan_cds,by="name",all.x=T)
+# NA change to 0
+pan[is.na(pan)]<-0
+
+
+# Remove multiple sequences in one strain
+core <- as.data.frame(table(merged_df$Query_id))
+colnames(core) <- c("name","freq")
+
+```
+
+Draw the figure
+Pie and heatmap
+
+```{R}
+library(plotrix)
+library(RColorBrewer)
+library(hrbrthemes)
+library(ggplot2)
+library(aplot)
+# Create label of unique, accessory and unique
+core$label <- ifelse(core$freq == 484, "core", ifelse(core$freq == 1, "unique", "accessory"))
+
+# Draw the pie chart
+table1<-as.data.frame(table(core$label))
+pie3D(x=table1$Freq, 
+radius=1,
+height=0.1,
+theta=pi/6, 
+explode=0.05, 
+main="Ran-sRnome in PA", 
+col = c("#8A8DBF","#E7BCC6","#FDCF9E"),
+border = "white",
+labels=paste0(c(table1$Var1),"\n","n=",table1$Freq),
+labelcex = 0.8
+)
+
+# annotate the merged_df
+pan <- merge(pan, core, by="name")
+pan$onlyinter <- ifelse(pan$inter == 1 & pan$cds == 0, "only in Intergenic Region", 
+                        ifelse(pan$inter == 1 & pan$cds == 1, "both","only in CDS"))
+pan_PA <- merge(merged_df, pan, by.x = "Query_id", by.y = "name", all.x =T)
+
+# Draw the pie chart
+table2<-as.data.frame(table(pan$onlyinter))
+pie3D(x=table2$Freq, 
+radius=1,
+height=0.1,
+theta=pi/6, 
+explode=0.05, 
+main="Ran-sRnome in PA", 
+col = c("#98B85D","#60A4A1","#A2A6BF"),
+border = "white",
+labels=paste0(c(table2$Var1),"\n","n=",table2$Freq),
+labelcex = 0.8
+)
+
+order = core[order(core$freq,decreasing = T),]$name
+
+# label the core accessory and unique
+group1 <- ggplot(pan_PA,aes(x=Query_id,y="group",fill=label.y))+
+  geom_tile() + 
+  scale_y_discrete(position="right") +
+  theme_minimal()+xlab(NULL) + ylab(NULL) +
+  theme(axis.text.x = element_blank())+
+  scale_x_discrete(limits = order) +
+  scale_fill_manual(values = c("#8A8DBF","#E7BCC6","#FDCF9E"))
+
+# label whether they are only inter or both
+group2 <- ggplot(pan_PA,aes(x=Query_id,y="group",fill=onlyinter))+
+  geom_tile() + 
+  scale_y_discrete(position="right") +
+  theme_minimal()+xlab(NULL) + ylab(NULL) +
+  theme(axis.text.x = element_blank())+
+  scale_x_discrete(limits = order) +
+  scale_fill_manual(values = c("#98B85D","#60A4A1","#A2A6BF"))
+p <- ggplot(pan_PA, aes(x=Query_id, y=Subject_id, fill= Identity)) + 
+#  scale_fill_manual(values = c("#53976F", "#C7CD8C", "#CC5D4E")) +
+  scale_fill_gradient(high="#B6766C", low = "#98B85D") +
+  geom_tile()+
+  theme(axis.text.x =element_text(angle =90,hjust = 1,vjust = 0.5))+
+  xlab(NULL) + ylab(NULL) +
+  scale_x_discrete(limits = order) 
+#  theme(axis.text.y = element_blank()) 
+ # geom_vline(xintercept=c(43.5,61.5),size=.3)
+p %>%
+  insert_bottom(group1, height = .04) %>%
+  insert_bottom(group2, height = .04)
+  
+                       
+ggsave("/Users/lubeifang/Desktop/sRNA/Figure/Figure5pan/pan_strain.pdf",p,width = 10, height = 48, limitsize = FALSE)
+
+```
+
+Focus on specific strains
+
+```{R}
+PAO1 <- subset(pan_PA, Subject_id == "NC_002516.2")
+PAO1 <- cbind(name = "PAO1", PAO1)
+
+PA14 <- subset(pan_PA, Subject_id == "NC_008463.1")
+PA14 <- cbind(name = "PA14", PA14)
+
+PAK <- subset(pan_PA, Subject_id == "NZ_LR657304.1")
+PAK <- cbind(name = "PAK", PAK)
+
+PA7 <- subset(pan_PA, Subject_id == "NC_009656.1")
+PA7 <- cbind(name = "PA7", PA7)
+
+PA_154197 <- subset(pan_PA, Subject_id == "NZ_CP014866.1")
+PA_154197 <- cbind(name = "PA_154197", PA_154197)
+
+PA_YL84 <- subset(pan_PA, Subject_id == "NZ_CP007147.1")
+PA_YL84 <- cbind(name = "PA_YL84", PA_YL84)
+
+PABL017 <- subset(pan_PA, Subject_id == "NZ_CP031660.1")
+PABL017 <- cbind(name = "PABL017", PABL017)
+
+PAPcyII_40 <- subset(pan_PA, Subject_id == "NZ_LR739069.1")
+PAPcyII_40 <- cbind(name = "PAPcyII-40", PAPcyII_40)
+
+table(PAPcyII_40$label.y)
+vectors <- list(PAO1$Query_id, PA14$Query_id, PAK$Query_id, PA7$Query_id, PA_154197$Query_id, PA_YL84$Query_id, PABL017$Query_id, PAPcyII_40$Query_id)
+
+common_elements <- Reduce(intersect, vectors)
+
+print(common_elements)
+a <- data.frame(name=common_elements)
+a <- merge(a, pan, by="name")
+table(a$label)
+# Collect 7 strains together
+strain8 <- rbind(PAO1,PA14,PAK,PA7,PA_154197,PA_YL84,PABL017,PAPcyII_40)
+ggplot(strain8, aes(x=name, y=label.y, fill=label.y)) + 
+  geom_bar(position="stack", stat = "identity") +
+  scale_fill_manual(values = c("#8A8DBF","#E7BCC6","#FDCF9E"))+
+  theme_classic()+
+  theme(axis.text.y = element_blank()) 
+ggplot(strain8, aes(x=name,y=label.y,fill=label.y))+
+  geom_col(aes(fill=label.y),show.legend = F)+
+  coord_polar() +
+  scale_fill_manual(values = c("#8A8DBF","#E7BCC6","#FDCF9E"))+
+  theme_bw() +
+  scale_y_discrete(limits = c("unique","accessory","core"))
+ggsave("7strain_acu.pdf", path = "/Users/lubeifang/Desktop/sRNA/Figure/Figure5/", width = 6, height = 3)
+a<-data.frame(table(strain8$Query_id))
+
+
+# draw how sRNA in which region
+order = pan[order(pan$onlyinter,decreasing = T),]$name
+group2 <- ggplot(pan_PA,aes(x=Query_id,y="group",fill=onlyinter))+
+  geom_tile() + 
+  scale_y_discrete(position="right") +
+  theme_minimal()+xlab(NULL) + ylab(NULL) +
+  theme(axis.text.x = element_blank())+
+  scale_x_discrete(limits = order) +
+  scale_fill_manual(values = c("#98B85D","#60A4A1","#A2A6BF"))
+p <- ggplot(pan_PA, aes(x=Query_id, y=label.x, fill=label.x)) + 
+  geom_bar(position="stack", stat = "identity") +
+  scale_fill_manual(values = c("#60A4A1","#A2A6BF"))+
+  theme_classic()+
+  theme(axis.text.y = element_blank()) +
+  theme(axis.text.x =element_text(angle =90,hjust = 1,vjust = 0.5)) +
+  scale_x_discrete(limits = order)
+p %>%
+  insert_top(group2, height = .1)
+ggsave("62srna_acu.pdf", path = "/Users/lubeifang/Desktop/sRNA/Figure/Figure5/", width = 16)
+```

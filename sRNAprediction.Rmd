@@ -1,0 +1,151 @@
+
+sRNA prediction R script
+
+```{r}
+rm(list=ls()) 
+getwd()
+setwd("/Users/lubeifang/Desktop/sRNA/sRNAprediction/") 
+library(ggplot2)
+library(tidyverse)
+library(viridis)
+```
+
+
+################ 
+sRNA prediction main function
+################ 
+```{R}
+determine.srna.by.coverage<-function(this.intgene.coverage.list){
+  
+  sRNA.min.len  = 50   # default 50
+  anchor.min.len= 30   # default 50
+  min.fold.diff = 1.5  # default 2
+  
+  best.anchor.positions = c(0,0)
+  best.coverage.difference = -1000
+  for(left.anchor.end.pos in anchor.min.len:(length(this.intgene.coverage.list)-anchor.min.len)){
+    for(right.anchor.begin.pos in (length(this.intgene.coverage.list)-anchor.min.len):sRNA.min.len){
+      if(left.anchor.end.pos<right.anchor.begin.pos &
+         (right.anchor.begin.pos-left.anchor.end.pos)>sRNA.min.len){
+        left.anchor.ave.coverage  = mean(this.intgene.coverage.list[1:left.anchor.end.pos])
+        right.anchor.ave.coverage = mean(this.intgene.coverage.list[right.anchor.begin.pos:length(this.intgene.coverage.list)])
+        sRNA.ave.coverage         = mean(this.intgene.coverage.list[(left.anchor.end.pos+1):(right.anchor.begin.pos-1)])
+        
+        if(sRNA.ave.coverage>min.fold.diff*left.anchor.ave.coverage &
+           sRNA.ave.coverage>min.fold.diff*right.anchor.ave.coverage){
+          this.coverage.difference = sRNA.ave.coverage - left.anchor.ave.coverage - right.anchor.ave.coverage
+          #cat(left.anchor.end.pos,"=",right.anchor.begin.pos,"=",this.coverage.difference,"\n")
+          if(this.coverage.difference>best.coverage.difference){
+            best.anchor.positions=c(left.anchor.end.pos, right.anchor.begin.pos)
+            best.coverage.difference = this.coverage.difference
+          }
+        }
+      }
+      
+    }
+  }
+  return(best.anchor.positions)
+}
+```
+
+
+################ ################ 
+sRNA prediction visualization
+################ ################ 
+```{R}
+plot.sRNA.line <- function(this.intgene.coverage.list, this.legend=""){
+  this.df = cbind(1:length(this.intgene.coverage.list), this.intgene.coverage.list)
+  colnames(this.df)=c('x','y')
+  this.df=data.frame(this.df)
+  p<-ggplot(this.df,aes(x=x, y=y)) +
+    geom_line( color="#69b3a2", linewidth=2, alpha=0.9, linetype=1) +
+    ggtitle(paste("Coverage of sRNA ", this.legend))
+  return(p)
+}
+```
+
+
+################ 
+sRNA prediction
+################
+```{R}
+setwd("/Users/lubeifang/Desktop/sRNA/sRNAprediction/depth/")
+these.mpileup.file.names = c("PAO1-1-1_depth","PAO1-1-2_depth",
+                             "PAO1-2-1_depth","PAO1-2-2_depth",
+                             "PAO1-3-1_depth","PAO1-3-2_depth",
+                             "WT1_depth","WT2_depth")
+these.mpileup.file.names = c("WT1_depth","WT2_depth")
+these.mpileup.file.names = c("WT1-1.depth","WT1-2.depth","WT2-1.depth","WT2-2.depth")
+
+# try 2 repeat of PAWT
+for(this.mpileup.file.name in these.mpileup.file.names){
+  wt.1.mpileup.coverage <- read.csv(paste0("/Users/lubeifang/Desktop/sRNA/sRNAprediction/depth/",this.mpileup.file.name,".txt"), sep="\t", header=FALSE)
+  pao.gtf.file <- read.csv("/Users/lubeifang/Desktop/sRNA/sRNAprediction/ref/PAO1.gtf", sep="\t", header=FALSE)
+# keep transcripts only  
+  num.of.transcripts = length(which(pao.gtf.file$V3=='transcript')) # how many genes annotated  
+  pao.gtf.transcripts = pao.gtf.file[which(pao.gtf.file$V3=='transcript'),]
+  pao.intergenic.region <- c()
+# determine the intergenic region start and end \# why 100 here?
+  min.intergenic.region.length = 100 
+  for(k in 1:(num.of.transcripts-1)){
+    this.id = pao.gtf.transcripts[k,9] 
+    next.id = pao.gtf.transcripts[k+1,9]
+    this.end = pao.gtf.transcripts[k,5] 
+    next.start = pao.gtf.transcripts[k+1,4]
+    if((next.start-this.end)>min.intergenic.region.length){
+      pao.intergenic.region=rbind(pao.intergenic.region, c(this.id, next.id, this.end, next.start))
+      }
+  }
+  
+  colnames(pao.intergenic.region) = c('prev.gene','next.gene','start','end')
+  pao.intergenic.region=data.frame(pao.intergenic.region)
+  pao.intergenic.region$start = as.numeric(as.character(pao.intergenic.region$start))
+  pao.intergenic.region$end = as.numeric(as.character(pao.intergenic.region$end))
+  predicted.sRNA.regions <- c()
+    
+  max.intergenic.region.size = 2000
+  pdf(paste0("/Users/lubeifang/Desktop/sRNA/sRNAprediction/Run1/",this.mpileup.file.name,".putative.sRNA.region.plot.testcode.pdf")) 
+
+  for(j in 1:nrow(pao.intergenic.region)){ 
+    if(j%%50==0){
+      print(j)
+      } # mark progress
+    this.start = pao.intergenic.region[j, 'start'] 
+    this.end= pao.intergenic.region[j, 'end']
+    
+    if(this.end > this.start & (this.end-this.start) < max.intergenic.region.size){
+      this.intgene.coverage.list=rep(0, (this.end-this.start+1)) # length of intergene
+      # find match region in genome coverage 
+      match.region = which(wt.1.mpileup.coverage$V2>=this.start & 
+                             wt.1.mpileup.coverage$V2<=this.end)
+      # split only PA0001
+      this.trascript.id = strsplit(strsplit(pao.intergenic.region[j,1], ";")[[1]][1], "-")[[1]][2]
+      next.trascript.id = strsplit(strsplit(pao.intergenic.region[j,2], ";")[[1]][1], "-")[[1]][2]
+  
+      # get the match region site-specific coverage
+      if(length(match.region)>50){
+        this.intgene.coverage.list[wt.1.mpileup.coverage[match.region, 'V2']-this.start+1] =
+          wt.1.mpileup.coverage[match.region, 'V3'] #change here to depth
+    
+      # need a certain coverage
+      # 平均表达量大于2？ 
+        if(mean(this.intgene.coverage.list)>2){
+          sRNA.candidates.start.end = determine.srna.by.coverage(this.intgene.coverage.list)
+          if(mean(sRNA.candidates.start.end)>1){
+            predicted.sRNA.regions=rbind(predicted.sRNA.regions,
+                                         unlist(c(pao.intergenic.region[j,], this.start+sRNA.candidates.start.end)))
+        
+          p<-plot.sRNA.line(this.intgene.coverage.list, this.legend = paste(this.trascript.id, next.trascript.id))
+          print(p)
+          }
+        }
+      }
+    }
+  }
+  dev.off()
+  predicted.sRNA.regions=data.frame(predicted.sRNA.regions)
+  write.csv(predicted.sRNA.regions, paste0("/Users/lubeifang/Desktop/sRNA/sRNAprediction/Run1",this.mpileup.file.name,".putative.sRNA.region.plot.csv"))
+}
+  
+  
+```

@@ -1,0 +1,92 @@
+sRNA phylogenetics
+
+
+Filters: 
+annotated
+complete genome
+
+```{R}
+rm(list=ls())
+getwd()
+
+
+library(dplyr)
+library(ggplot2)
+
+# For 21evo
+blast=read.csv("/Users/lubeifang/Desktop/sRNA/MSA/22_results.txt", sep = "\t", header = F)
+colnames(blast) = c("Query_id","Subject_id","Identity","Align_length","Miss_match",
+                    "Gap","Query_start","Query_end","Subject_start","Subject_end","E_value","Score")
+length(unique(blast$Subject_id))
+
+# set the cutoff of E_value
+blast_f <- subset(blast, E_value <= 1e-10 & Identity > 90) 
+
+# For 21evo
+PA <- subset(blast, Subject_id == "NC_002516.2" | Subject_id == "NZ_LR657304.1" | Subject_id == "NZ_CP007224.1")
+PA <- subset(PA, E_value <= 1e-10 & Identity > 99)
+rest <- subset(blast, Subject_id != "NC_002516.2" & Subject_id != "NZ_LR657304.1" & Subject_id
+               != "NZ_CP007224.1")
+rest <- subset(rest)
+blast_f <- rbind(PA,rest)
+
+```
+
+check whether the sRNA is in intergenic region
+```{R}
+library(tidygenomics)
+library(dplyr)
+
+a <- blast_f[c(1,2,9,10)]
+# rearrange the start and end position, orderly
+df1 <- data.frame(id = a[,1], chromosome = a[,2], 
+                  start = ifelse(a$Subject_start < a$Subject_end, a$Subject_start, a$Subject_end),
+                  end = ifelse(a$Subject_start > a$Subject_end, a$Subject_start, a$Subject_end))
+unique(df1$chromosome)
+colnames(df1) <- c("id","chromosome", "start", "end")
+
+# for 21evo
+ref <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/22.gff", skip=10, header = F, sep = "\t")
+
+
+ref <- subset(ref, V3 ==  "CDS")
+# rename df2 col
+df2 <- ref[,c(9,1,4,5)]
+colnames(df2) <- c("id","chromosome", "start", "end")
+
+# check whether they are in intergenic region
+int=genome_intersect(df1, df2, by=c("chromosome", "start", "end"), mode="both")
+
+table(int$id.x)
+```
+
+
+filter sRNA in CDS region
+```{R}
+colnames(int) <- c("Query_id","Subject_id","gene_id","start","end")
+merged_df <- merge(blast_f, int, by=c("Query_id","Subject_id"), all.x = T)
+merged_df$label <- ifelse(is.na(merged_df$gene_id),"Intergenic region","CDS region")
+
+# for 22evo
+# write.csv(merged_df,"sRNAblast.csv")
+order_df <- read.csv("/Users/lubeifang/Desktop/sRNA/MSA/22EVOLlist_ncbi.txt",sep = "\t")
+order = rev(order_df$NCBI)
+unique(merged_df$Subject_id)
+setdiff(merged_df$Subject_id,order_df$NCBI)
+
+ggplot(merged_df, aes(x=Query_id, y=Subject_id),showCategory=8) +
+	geom_point(aes(color=Score, size=Identity, shape = factor(label)))+
+  scale_shape_manual(values = c(1,20)) +
+  scale_color_continuous() +
+  scale_size_continuous()  +
+  scale_color_gradient(high = "#4E659B", low = "#8A8DBF") +
+  scale_fill_gradient(high = "#4E659B", low = "#8A8DBF") +
+  scale_y_discrete(limits = order) +
+  theme_minimal()
+
+ggsave("22evodot.pdf", path = "/Users/lubeifang/Desktop/sRNA/Figure/evolution/",height = 10, width = 11, limitsize = FALSE)
+  
+
+
+```
+
