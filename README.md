@@ -1,5 +1,6 @@
 # CCEP-sRNA
-Study of pan-sRNome and regulatory mechanisms in pseudomonas aeruginosa reveals virulence-related functions of small non-coding RNAs
+Study of pan-sRNome and regulatory mechanisms in pseudomonas aeruginosa reveals virulence-related functions of small non-coding RNAs.
+Please ENJOY!
 
 We uploaded
 ## code
@@ -17,5 +18,3 @@ For Pan-sRNome study in bacteria
 
 RNAseq.sh
 For raw sequencing file processing with shell script
-
-## reference file
