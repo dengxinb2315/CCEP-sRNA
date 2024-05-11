@@ -1,9 +1,7 @@
-sRNA phylogenetics
+# sRNA phylogenetics
 
 
-Filters: 
-annotated
-complete genome
+#### Filters: annotatedcomplete genome
 
 ```{R}
 rm(list=ls())
@@ -32,7 +30,7 @@ blast_f <- rbind(PA,rest)
 
 ```
 
-check whether the sRNA is in intergenic region
+#### check whether the sRNA is in intergenic region
 ```{R}
 library(tidygenomics)
 library(dplyr)
@@ -61,7 +59,7 @@ table(int$id.x)
 ```
 
 
-filter sRNA in CDS region
+#### filter sRNA in CDS region
 ```{R}
 colnames(int) <- c("Query_id","Subject_id","gene_id","start","end")
 merged_df <- merge(blast_f, int, by=c("Query_id","Subject_id"), all.x = T)
