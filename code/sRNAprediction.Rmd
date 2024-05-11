@@ -128,7 +128,6 @@ for(this.mpileup.file.name in these.mpileup.file.names){
           wt.1.mpileup.coverage[match.region, 'V3'] #change here to depth
     
       # need a certain coverage
-      # 平均表达量大于2？ 
         if(mean(this.intgene.coverage.list)>2){
           sRNA.candidates.start.end = determine.srna.by.coverage(this.intgene.coverage.list)
           if(mean(sRNA.candidates.start.end)>1){
