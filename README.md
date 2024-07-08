@@ -4,19 +4,22 @@ Study of pan-sRNome and regulatory mechanisms in pseudomonas aeruginosa reveals 
 
 Cheers！
 
+## Graphic abstract
+![abstract](readme_fig/PA-sRNA.png)
+
 
 ## code
-sRNApredicion.Rmd
-For sRNA prediction
+[sRNApredicion.Rmd](code/PAsRNA_DEG.R)
+: For sRNA prediction
 
-Phylo_sRNA.Rmd
-For the phylogenetic study of novel sRNA sequences
+[Phylo_sRNA.Rmd](code/Phylo_sRNA.Rmd)
+: For the phylogenetic study of novel sRNA sequences
 
-PAsRNA_DEG.R
-For DEG detection
+[PAsRNA_DEG.R](code/PAsRNA_DEG.R)
+: For DEG detection
 
-Pan_sRNA.Rmd
-For Pan-sRNome study in bacteria
+[Pan_sRNA.Rmd](code/Pan-sRNA.Rmd)
+: For Pan-sRNome study in bacteria
 
-RNAseq.sh
-For raw sequencing file processing with shell script
+[RNAseq.sh](code/RNAseq.sh)
+: For raw sequencing file processing with shell script
