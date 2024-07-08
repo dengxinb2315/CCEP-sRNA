@@ -23,3 +23,10 @@ Cheers！
 
 [RNAseq.sh](code/RNAseq.sh)
 : For raw sequencing file processing with shell script
+
+## Contact Info
+Detailed information are available upon resonable request.
+
+Correspondence: xindeng@cityu.edu.hk. 
+
+First Author: Tianminli3-c@my.cityu.edu.hk; beifanglu2-c@my.cityu.edu.hk.
